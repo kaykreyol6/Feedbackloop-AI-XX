@@ -30,7 +30,7 @@ from sqlalchemy.exc import SQLAlchemyError
 try:
     from .database import Base, engine, SessionLocal
     from . import models, seed
-    from . import agent, requisitions, candidates, interviews
+    from . import agent, requisitions, candidates, interviews, claude_proxy
 except ImportError:
     from database import Base, engine, SessionLocal
     import models
@@ -39,6 +39,7 @@ except ImportError:
     import requisitions
     import candidates
     import interviews
+    import claude_proxy
 
 # Creates tables if they don't exist yet. seed.py is what actually populates data.
 Base.metadata.create_all(bind=engine)
@@ -86,6 +87,7 @@ async def db_error_handler(request: Request, exc: SQLAlchemyError):
 app.include_router(requisitions.router)
 app.include_router(candidates.router)
 app.include_router(interviews.router)
+app.include_router(claude_proxy.router)
 
 FRONTEND_DIR = Path(__file__).resolve().parent
 

@@ -524,13 +524,25 @@ function renderAssistantPanel() {
   const form = document.getElementById("assistant-form");
   if (form && !form.dataset.bound) {
     form.dataset.bound = "true";
-    form.addEventListener("submit", (e) => {
+    form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const input = document.getElementById("assistant-input");
       const value = (input.value || "").trim();
       if (!value) return;
       assistantMessages.push({ role: "user", content: value });
-      assistantMessages.push({ role: "assistant", content: buildAssistantReply(value) });
+      const selected = getAssistantSelectedCandidate();
+      try {
+        const res = await fetch(`/api/ai/claude`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ candidate_id: selected ? selected.candidate_id : null, message: value }),
+        });
+        const json = await res.json();
+        const text = json.text || buildAssistantReply(value);
+        assistantMessages.push({ role: "assistant", content: text });
+      } catch (err) {
+        assistantMessages.push({ role: "assistant", content: buildAssistantReply(value) });
+      }
       input.value = "";
       renderAssistantPanel();
     });
