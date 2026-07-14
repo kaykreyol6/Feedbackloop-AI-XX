@@ -867,6 +867,19 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+async function openAssistantForInterview(reqId, candidateId) {
+  if (CURRENT_REQ_ID !== reqId || !comparisonData) {
+    CURRENT_REQ_ID = reqId;
+    await loadComparison();
+  }
+  assistantSelectedCandidateId = candidateId;
+  assistantOpen = true;
+  document.getElementById("assistant-panel").classList.add("open");
+  document.getElementById("assistant-panel").setAttribute("aria-hidden", "false");
+  await loadAssistantChatHistory(candidateId);
+  renderAssistantPanel();
+}
+
 async function renderInterviewerView(interviewId) {
   const view = document.getElementById("interviewer-view");
   view.style.display = "block";
@@ -922,7 +935,8 @@ function renderInterviewerCard(interviewId, data, editing) {
     <div class="iv-wrap">
       <div class="iv-card">
         <div class="iv-brand"><div class="brand-mark">FL</div>
-          <div><div class="iv-brand-title">FeedbackLoop AI</div><div class="iv-brand-sub">Interview scorecard</div></div></div>
+          <div><div class="iv-brand-title">FeedbackLoop AI</div><div class="iv-brand-sub">Interview scorecard</div></div>
+          <button id="iv-ai-toggle" class="assistant-toggle iv-ai-toggle" type="button">AI HR Copilot</button></div>
         <h1 class="iv-candidate">${data.candidate_name}</h1>
         <div class="iv-sub">${data.req_code} &middot; ${data.title} &middot; ${data.interview.panel_stage} panel</div>
         <div class="iv-sub">You: ${data.interview.interviewer_name} (${data.interview.interviewer_role}) &middot; feedback due ${new Date(data.interview.feedback_due).toLocaleString()}</div>
@@ -932,6 +946,10 @@ function renderInterviewerCard(interviewId, data, editing) {
         ${bodyHtml}
       </div>
     </div>`;
+
+  document.getElementById("iv-ai-toggle").addEventListener("click", () => {
+    openAssistantForInterview(data.req_id, data.candidate_id);
+  });
 
   if (showForm) {
     document.getElementById("iv-form").addEventListener("submit", async (e) => {

@@ -241,6 +241,7 @@ header{
 .iv-wrap{ max-width: 720px; margin: 0 auto; padding: 40px 20px; }
 .iv-card{ background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px 30px; }
 .iv-brand{ display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+.iv-ai-toggle{ margin-left: auto; }
 .iv-brand-title{ font-family: var(--font-display); font-weight: 700; font-size: 15px; color: var(--text); }
 .iv-brand-sub{ font-size: 12px; color: var(--text-dim); }
 .iv-candidate{ font-family: var(--font-display); font-size: 26px; margin: 0 0 6px; color: var(--text); }
