@@ -83,6 +83,19 @@ class Candidate(Base):
 
     requisition = relationship("Requisition", back_populates="candidates")
     interviews = relationship("Interview", back_populates="candidate", cascade="all, delete-orphan")
+    chat_messages = relationship("CandidateChat", back_populates="candidate", cascade="all, delete-orphan")
+
+
+class CandidateChat(Base):
+    __tablename__ = "candidate_chat"
+
+    id = Column(Integer, primary_key=True, index=True)
+    candidate_id = Column(Integer, ForeignKey("candidates.id"), nullable=False)
+    role = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    candidate = relationship("Candidate", back_populates="chat_messages")
 
 
 class Interview(Base):

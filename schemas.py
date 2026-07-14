@@ -73,6 +73,21 @@ class CandidateOut(BaseModel):
     fraud_reason: Optional[str] = None
 
 
+class CandidateChatMessageIn(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    role: str
+    content: str
+
+
+class CandidateChatMessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    candidate_id: int
+    role: str
+    content: str
+    created_at: datetime
+
+
 class RequisitionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
