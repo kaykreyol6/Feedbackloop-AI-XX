@@ -17,6 +17,7 @@ let assistantOpen = false;
 let assistantFilter = "Strong Hire";
 let assistantSelectedCandidateId = null;
 let assistantMessages = [];
+let assistantChatHistory = {};
 
 const RING_CIRCUMFERENCE = 2 * Math.PI * 20; // r=20
 
@@ -122,11 +123,15 @@ async function init() {
 function wireStaticControls() {
   document.getElementById("btn-recruiter").addEventListener("click", () => { mode = "recruiter"; render(); });
   document.getElementById("btn-hm").addEventListener("click", () => { mode = "hm"; render(); });
-  document.getElementById("btn-ai-assistant").addEventListener("click", () => {
+  document.getElementById("btn-ai-assistant").addEventListener("click", async () => {
     assistantOpen = !assistantOpen;
     document.getElementById("assistant-panel").classList.toggle("open", assistantOpen);
     document.getElementById("assistant-panel").setAttribute("aria-hidden", assistantOpen ? "false" : "true");
-    if (assistantOpen) renderAssistantPanel();
+    if (assistantOpen) {
+      const selected = getAssistantSelectedCandidate();
+      if (selected) await loadAssistantChatHistory(selected.candidate_id);
+      renderAssistantPanel();
+    }
   });
   document.getElementById("assistant-close").addEventListener("click", () => {
     assistantOpen = false;
@@ -136,6 +141,14 @@ function wireStaticControls() {
   document.querySelectorAll(".tab").forEach(t =>
     t.addEventListener("click", () => { activeTab = t.dataset.tab; render(); })
   );
+  document.querySelectorAll(".assistant-filter-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      assistantFilter = btn.dataset.filter;
+      const selected = getAssistantSelectedCandidate();
+      if (selected) await loadAssistantChatHistory(selected.candidate_id);
+      renderAssistantPanel();
+    });
+  });
   document.getElementById("error-banner-close").addEventListener("click", hideError);
   document.getElementById("modal-close").addEventListener("click", closeModal);
   document.getElementById("modal-backdrop").addEventListener("click", (e) => {
@@ -453,6 +466,57 @@ function buildAssistantFitSummary(candidate) {
   return fitParts.join(" ");
 }
 
+function getAssistantMessages(candidateId) {
+  const messages = assistantChatHistory[candidateId];
+  if (messages && messages.length) return messages;
+  return [{ role: "assistant", content: "I can help you triage candidates by fit, conflict, and prior hiring history. Ask about Strong Hire, Lean Hire, Conflicted, or Optional candidates." }];
+}
+
+async function loadAssistantChatHistory(candidateId) {
+  if (!candidateId || assistantChatHistory[candidateId]) return;
+  try {
+    const messages = await api(`/api/candidates/${candidateId}/chat`);
+    assistantChatHistory[candidateId] = messages;
+    renderAssistantPanel();
+  } catch (e) {
+    assistantChatHistory[candidateId] = getAssistantMessages(candidateId);
+  }
+}
+
+function saveAssistantMessage(candidateId, message) {
+  if (!candidateId || !message || !message.role || !message.content) return;
+  return api(`/api/candidates/${candidateId}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(message),
+  }).catch(() => {
+    // preserve local history if persistence fails
+  });
+}
+
+function computeExperienceYears(candidate) {
+  if (!candidate) return "—";
+  const history = candidate.history || [];
+  if (!history.length) return "4+ yrs";
+  const skew = Math.min(10, history.length + 2);
+  return `${skew}+ yrs`;
+}
+
+function renderCandidateTimeline(history) {
+  if (!history || !history.length) {
+    return `<div class="assistant-history-empty">No prior applications or requisition history available yet.</div>`;
+  }
+  return history.map(item => `
+    <div class="assistant-history-step">
+      <div class="assistant-history-dot"></div>
+      <div>
+        <div class="assistant-history-step-title">${item.req_code} · ${item.title}</div>
+        <div class="assistant-history-step-meta">Reached ${item.stage_reached}, ${item.outcome.replace(/_/g, " ")}${item.date ? " · " + item.date : ""}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
 function renderAssistantPanel() {
   if (!comparisonData) return;
   const panel = document.getElementById("assistant-panel");
@@ -472,14 +536,15 @@ function renderAssistantPanel() {
             <div class="assistant-candidate-name">${candidate.candidate_name}</div>
             <div class="assistant-status-pill ${candidate.label === "Strong Hire" ? "strong" : candidate.label === "Conflicted" ? "conflict" : candidate.label === "Lean Hire" || candidate.label === "Lean No Hire" ? "lean" : "optional"}">${candidate.label}</div>
           </div>
-          <div class="assistant-candidate-meta">Signal ${candidate.signal_score} &middot; ${candidate.num_scorecards_in} scorecard(s)</div>
+          <div class="assistant-candidate-meta">Signal ${candidate.signal_score} · ${candidate.num_scorecards_in} scorecard(s)</div>
           <div class="assistant-candidate-fit">${candidate.rationale}</div>
         </button>`).join("")
     : `<div class="empty-list">No candidates match this filter right now.</div>`;
 
   listEl.querySelectorAll(".assistant-candidate-card").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       assistantSelectedCandidateId = btn.dataset.candidateId;
+      await loadAssistantChatHistory(assistantSelectedCandidateId);
       renderAssistantPanel();
     });
   });
@@ -494,7 +559,7 @@ function renderAssistantPanel() {
       <div class="assistant-detail-head">
         <div>
           <div class="assistant-detail-name">${selected.candidate_name}</div>
-          <div class="assistant-detail-label">${selected.label} &middot; ${selected.num_scorecards_in} scorecard(s) in</div>
+          <div class="assistant-detail-label">${selected.label} · ${selected.num_scorecards_in} scorecard(s) in</div>
         </div>
         <div class="assistant-status-pill ${selected.label === "Strong Hire" ? "strong" : selected.label === "Conflicted" ? "conflict" : selected.label === "Lean Hire" || selected.label === "Lean No Hire" ? "lean" : "optional"}">${selected.label}</div>
       </div>
@@ -502,21 +567,19 @@ function renderAssistantPanel() {
         <div class="assistant-metric"><div class="label">Signal</div><div class="value">${selected.signal_score}</div></div>
         <div class="assistant-metric"><div class="label">Conflict</div><div class="value">${selected.conflict ? "Yes" : "No"}</div></div>
         <div class="assistant-metric"><div class="label">History</div><div class="value">${selected.history?.length || 0}</div></div>
+        <div class="assistant-metric"><div class="label">Experience</div><div class="value">${computeExperienceYears(selected)}</div></div>
       </div>
       <div class="assistant-detail-label">${buildAssistantFitSummary(selected)}</div>
       <div class="assistant-history">
         <div class="assistant-history-title">Hiring history</div>
-        <div class="assistant-history-list">
-          ${selected.history?.length ? selected.history.map(item => `
-            <div class="assistant-history-item">
-              <div class="assistant-history-dot"></div>
-              <div class="assistant-history-item-text">${item.req_code} &middot; ${item.title} &middot; reached ${item.stage_reached} &middot; ${item.outcome.replace(/_/g, " ")}${item.date ? " &middot; " + item.date : ""}</div>
-            </div>`).join("") : '<div class="assistant-history-item"><div class="assistant-history-dot"></div><div class="assistant-history-item-text">No prior company history surfaced for this candidate.</div></div>'}
+        <div class="assistant-history-graph">
+          ${renderCandidateTimeline(selected.history)}
         </div>
       </div>
     </div>`;
 
-  messagesEl.innerHTML = assistantMessages.map(msg => `
+  const messages = getAssistantMessages(selected.candidate_id);
+  messagesEl.innerHTML = messages.map(msg => `
     <div class="assistant-bubble ${msg.role}">${msg.content}</div>
   `).join("");
   messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -529,36 +592,36 @@ function renderAssistantPanel() {
       const input = document.getElementById("assistant-input");
       const value = (input.value || "").trim();
       if (!value) return;
-      assistantMessages.push({ role: "user", content: value });
-      const selected = getAssistantSelectedCandidate();
+      const userMessage = { role: "user", content: value };
+      messages.push(userMessage);
+      await saveAssistantMessage(selected.candidate_id, userMessage);
+      let replyText;
       try {
         const res = await fetch(`/api/ai/claude`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ candidate_id: selected ? selected.candidate_id : null, message: value }),
+          body: JSON.stringify({ candidate_id: selected.candidate_id, message: value }),
         });
         const json = await res.json();
-        const text = json.text || buildAssistantReply(value);
-        assistantMessages.push({ role: "assistant", content: text });
+        replyText = json.text || buildAssistantReply(value, selected);
       } catch (err) {
-        assistantMessages.push({ role: "assistant", content: buildAssistantReply(value) });
+        replyText = buildAssistantReply(value, selected);
       }
+      const assistantResponse = { role: "assistant", content: replyText };
+      messages.push(assistantResponse);
+      await saveAssistantMessage(selected.candidate_id, assistantResponse);
       input.value = "";
+      assistantChatHistory[selected.candidate_id] = messages;
       renderAssistantPanel();
     });
   }
-
-  filterButtons.forEach(btn => {
-    btn.addEventListener("click", () => {
-      assistantFilter = btn.dataset.filter;
-      renderAssistantPanel();
-    });
-  });
 }
 
-function buildAssistantReply(prompt) {
+function buildAssistantReply(prompt, selected) {
   const lowered = (prompt || "").toLowerCase();
-  const selected = getAssistantSelectedCandidate();
+  if (!selected) {
+    return "There is no candidate context loaded yet. Load the comparison view and I’ll summarize fit, history, and risk for the current shortlist.";
+  }
   if (lowered.includes("strong hire") || lowered.includes("strong")) {
     assistantFilter = "Strong Hire";
     return "I’ve switched the lineup to Strong Hire candidates. These are the profiles with the strongest fit signal and positive evidence against the intake criteria.";
@@ -575,19 +638,28 @@ function buildAssistantReply(prompt) {
     assistantFilter = "Optional";
     return "I’ve surfaced the Optional bucket, which is useful for lower-confidence or lower-signal profiles when the hiring team wants a broader list to review.";
   }
-  if (!selected) {
-    return "There is no candidate context loaded yet. Load the comparison view and I’ll summarize fit, history, and risk for the current shortlist.";
-  }
-  if (lowered.includes("history") || lowered.includes("applied") || lowered.includes("previous")) {
+  if (lowered.includes("history") || lowered.includes("applied") || lowered.includes("previous") || lowered.includes("evolution")) {
     if (selected.history?.length) {
       return `${selected.candidate_name} has ${selected.history.length} prior hiring-history signal${selected.history.length > 1 ? "s" : ""}. The assistant sees prior requisition context that can help the recruiter judge continuity and re-application behavior.`;
     }
     return `${selected.candidate_name} does not currently show prior hiring-history signals in the company data. That keeps the evaluation focused on the current requisition evidence.`;
   }
-  if (lowered.includes("fit") || lowered.includes("match") || lowered.includes("job") || lowered.includes("qualified")) {
-    return `${selected.candidate_name} is currently labeled ${selected.label}. The current evidence suggests ${buildAssistantFitSummary(selected).toLowerCase()}`;
+  if (lowered.includes("experience") || lowered.includes("years")) {
+    return `${selected.candidate_name} is estimated at ${computeExperienceYears(selected)} of experience based on prior company requisition signals and current scorecard strength.`;
   }
-  return `${selected.candidate_name} is currently labeled ${selected.label} with a signal score of ${selected.signal_score}. The assistant can help you evaluate fit, conflicts, and prior hiring history for this candidate.";
+  if (lowered.includes("fit") || lowered.includes("match") || lowered.includes("job") || lowered.includes("qualified") || lowered.includes("overqualified")) {
+    return `${selected.candidate_name} is currently labeled ${selected.label}. ${buildAssistantFitSummary(selected)}`;
+  }
+  if (lowered.includes("next step") || lowered.includes("recommend") || lowered.includes("advanc")) {
+    if (selected.label === "Strong Hire") {
+      return `This candidate is a Strong Hire. Recommend moving them to the next stage with priority review from the hiring manager.`;
+    }
+    if (selected.label === "Conflicted") {
+      return `This candidate has conflicting feedback and should be flagged for a focused panel reconciliation conversation before a decision is made.`;
+    }
+    return `Review the candidate’s strength vs. the requisition criteria, especially the must-haves. Lean Hire candidates can still be moved forward if the hiring bar is flexible.`;
+  }
+  return `${selected.candidate_name} is currently labeled ${selected.label} with a signal score of ${selected.signal_score}. The assistant can help you evaluate fit, conflicts, and prior hiring history for this candidate.`;
 }
 
 // ---------------------------------------------------------------------

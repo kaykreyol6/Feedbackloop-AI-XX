@@ -135,6 +135,38 @@ def flag_candidate_fraud(candidate_id: int, body: schemas.FraudFlagRequest,
     return cand
 
 
+@router.get("/{candidate_id}/chat", response_model=list[schemas.CandidateChatMessageOut])
+def get_candidate_chat(candidate_id: int, db: Session = Depends(get_db)):
+    """Retrieve persisted assistant chat history for a candidate."""
+    cand = db.query(models.Candidate).filter(models.Candidate.id == candidate_id).first()
+    if not cand:
+        raise HTTPException(404, "Candidate not found")
+    messages = db.query(models.CandidateChat).filter(models.CandidateChat.candidate_id == candidate_id).order_by(models.CandidateChat.created_at).all()
+    return messages
+
+
+@router.post("/{candidate_id}/chat", response_model=schemas.CandidateChatMessageOut)
+def post_candidate_chat(candidate_id: int, message: schemas.CandidateChatMessageIn,
+                         db: Session = Depends(get_db)):
+    """Persist a user-assistant chat message for a candidate."""
+    cand = db.query(models.Candidate).filter(models.Candidate.id == candidate_id).first()
+    if not cand:
+        raise HTTPException(404, "Candidate not found")
+    chat = models.CandidateChat(
+        candidate_id=candidate_id,
+        role=message.role,
+        content=message.content,
+    )
+    db.add(chat)
+    try:
+        db.commit()
+        db.refresh(chat)
+    except Exception:
+        db.rollback()
+        raise
+    return chat
+
+
 @router.get("/{candidate_id}/summary")
 def candidate_summary(candidate_id: int, db: Session = Depends(get_db)):
     """Hiring-manager-safe single-candidate summary. No cross-candidate ranking data here."""
