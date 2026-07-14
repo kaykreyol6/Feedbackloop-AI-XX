@@ -13,8 +13,13 @@ Run directly:  python -m backend.seed
 """
 
 from datetime import datetime, timedelta
-from .database import Base, engine, SessionLocal
-from . import models, agent
+
+try:
+    from .database import Base, engine, SessionLocal
+    from . import models, agent
+except ImportError:
+    from database import Base, engine, SessionLocal
+    import models, agent
 
 
 def run():

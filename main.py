@@ -27,15 +27,20 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
-from .database import Base, engine
-from .routers import requisitions, candidates, interviews
+try:
+    from .database import Base, engine, SessionLocal
+    from . import models, seed
+    from . import agent, requisitions, candidates, interviews
+except ImportError:
+    from database import Base, engine, SessionLocal
+    import models
+    import seed
+    import agent
+    import requisitions
+    import candidates
+    import interviews
 
 # Creates tables if they don't exist yet. seed.py is what actually populates data.
-Base.metadata.create_all(bind=engine)
-
-from .database import Base, engine, SessionLocal
-from . import models
-
 Base.metadata.create_all(bind=engine)
 
 # Auto-seed if the database is empty -- makes the app self-healing on
@@ -45,7 +50,6 @@ def _seed_if_empty():
     db = SessionLocal()
     try:
         if db.query(models.Requisition).count() == 0:
-            from . import seed
             seed.run()
     finally:
         db.close()
@@ -83,7 +87,7 @@ app.include_router(requisitions.router)
 app.include_router(candidates.router)
 app.include_router(interviews.router)
 
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+FRONTEND_DIR = Path(__file__).resolve().parent
 
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
@@ -96,7 +100,10 @@ def serve_frontend():
 @app.get("/intro")
 def serve_intro():
     """Animated cold-open title card -- handy as a presentation opener at /intro."""
-    return FileResponse(FRONTEND_DIR.parent / "intro.html")
+    intro_path = FRONTEND_DIR / "intro.html"
+    if intro_path.exists():
+        return FileResponse(intro_path)
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 
 @app.get("/api/health")

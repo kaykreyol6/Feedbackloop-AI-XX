@@ -17,8 +17,13 @@ stay in code regardless, per the PRD's blast-radius section (3c).
 
 import os
 from datetime import datetime, timedelta
+from typing import Optional, Tuple
 from sqlalchemy.orm import Session
-from . import models
+
+try:
+    from . import models
+except ImportError:
+    import models
 
 SLA_HOURS = 24
 
@@ -107,7 +112,7 @@ def attempt_reminder(db: Session, interview: models.Interview, channel: str = "s
 # ---------------------------------------------------------------------
 # Scorecard text safety check (constraint #1 in system prompt v0)
 # ---------------------------------------------------------------------
-def check_injection(text: str) -> tuple[bool, str | None]:
+def check_injection(text: str) -> Tuple[bool, Optional[str]]:
     if not text:
         return False, None
     lowered = text.lower()
@@ -160,11 +165,11 @@ def synthesize_candidate(candidate: models.Candidate) -> dict:
 # ---------------------------------------------------------------------
 # get_candidate_history equivalent (PRD 3a -- NEW read-only, cross-req)
 # ---------------------------------------------------------------------
-def _normalize_email(email: str | None) -> str | None:
+def _normalize_email(email: Optional[str]) -> Optional[str]:
     return email.strip().lower() if email and email.strip() else None
 
 
-def _pid(candidate: models.Candidate) -> str | None:
+def _pid(candidate: models.Candidate) -> Optional[str]:
     return candidate.person_id.strip() if candidate.person_id and candidate.person_id.strip() else None
 
 

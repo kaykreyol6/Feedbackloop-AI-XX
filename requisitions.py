@@ -9,8 +9,12 @@ ranked comparison (get_req_criteria + get_req_candidates -> agent.compare_candid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
-from ..database import get_db
-from .. import models, schemas, agent
+try:
+    from ..database import get_db
+    from .. import models, schemas, agent
+except ImportError:
+    from database import get_db
+    import models, schemas, agent
 
 router = APIRouter(prefix="/api/requisitions", tags=["requisitions"])
 

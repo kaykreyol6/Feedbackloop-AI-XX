@@ -21,7 +21,11 @@ from sqlalchemy import (
     Column, Integer, String, Text, Boolean, DateTime, ForeignKey
 )
 from sqlalchemy.orm import relationship
-from .database import Base
+
+try:
+    from .database import Base
+except ImportError:
+    from database import Base
 
 
 class Requisition(Base):

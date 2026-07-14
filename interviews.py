@@ -10,8 +10,12 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
-from ..database import get_db
-from .. import models, schemas, agent
+try:
+    from ..database import get_db
+    from .. import models, schemas, agent
+except ImportError:
+    from database import get_db
+    import models, schemas, agent
 
 router = APIRouter(prefix="/api/interviews", tags=["interviews"])
 
