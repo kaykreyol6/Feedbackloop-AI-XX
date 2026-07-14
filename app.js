@@ -13,6 +13,10 @@ let mode = "recruiter";
 let activeTab = "sla";
 let hmSelectedCandidateId = null;
 let reparticipationAlerted = false;  // fire the re-participation popup only once per load
+let assistantOpen = false;
+let assistantFilter = "Strong Hire";
+let assistantSelectedCandidateId = null;
+let assistantMessages = [];
 
 const RING_CIRCUMFERENCE = 2 * Math.PI * 20; // r=20
 
@@ -118,6 +122,17 @@ async function init() {
 function wireStaticControls() {
   document.getElementById("btn-recruiter").addEventListener("click", () => { mode = "recruiter"; render(); });
   document.getElementById("btn-hm").addEventListener("click", () => { mode = "hm"; render(); });
+  document.getElementById("btn-ai-assistant").addEventListener("click", () => {
+    assistantOpen = !assistantOpen;
+    document.getElementById("assistant-panel").classList.toggle("open", assistantOpen);
+    document.getElementById("assistant-panel").setAttribute("aria-hidden", assistantOpen ? "false" : "true");
+    if (assistantOpen) renderAssistantPanel();
+  });
+  document.getElementById("assistant-close").addEventListener("click", () => {
+    assistantOpen = false;
+    document.getElementById("assistant-panel").classList.remove("open");
+    document.getElementById("assistant-panel").setAttribute("aria-hidden", "true");
+  });
   document.querySelectorAll(".tab").forEach(t =>
     t.addEventListener("click", () => { activeTab = t.dataset.tab; render(); })
   );
@@ -185,10 +200,17 @@ let comparisonData = null;
 async function loadComparison() {
   comparisonData = await api(`/api/requisitions/${CURRENT_REQ_ID}/comparison`);
   document.getElementById("count-compare").textContent = `${comparisonData.ranking.length} candidates`;
+  if (!assistantSelectedCandidateId && comparisonData.ranking.length) {
+    assistantSelectedCandidateId = comparisonData.ranking[0].candidate_id;
+  }
+  if (assistantMessages.length === 0) {
+    assistantMessages = [{ role: "assistant", content: "I can help you triage candidates by fit, conflict, and prior hiring history. Ask about Strong Hire, Lean Hire, Conflicted, or Optional candidates." }];
+  }
   renderDebrief();
   renderCriteriaStrip();
   renderRankCards();
   renderHmPicker();
+  renderAssistantPanel();
 }
 
 function renderCriteriaStrip() {
@@ -384,6 +406,176 @@ async function renderHmSummary() {
       ${summary.conflict ? '<div class="conflict-note"><span class="icon">!</span><span class="text">Panel feedback conflicts on this candidate.</span></div>' : ''}
       <div class="hm-next"><b>Suggested next step:</b> ${summary.next_step}</div>
     </div>`;
+}
+
+// ---------------------------------------------------------------------
+// AI HR Copilot assistant panel
+// ---------------------------------------------------------------------
+function getAssistantLabelGroup(label) {
+  if (label === "Strong Hire") return "Strong Hire";
+  if (label === "Lean Hire" || label === "Lean No Hire") return "Lean Hire";
+  if (label === "Conflicted") return "Conflicted";
+  return "Optional";
+}
+
+function getAssistantMatches(filter) {
+  if (!comparisonData) return [];
+  return comparisonData.ranking.filter(r => {
+    const group = getAssistantLabelGroup(r.label);
+    if (filter === "Strong Hire") return group === "Strong Hire";
+    if (filter === "Lean Hire") return group === "Lean Hire";
+    if (filter === "Conflicted") return group === "Conflicted";
+    return group === "Optional";
+  });
+}
+
+function getAssistantSelectedCandidate() {
+  const matches = getAssistantMatches(assistantFilter);
+  if (!matches.length) return comparisonData ? comparisonData.ranking[0] : null;
+  const selected = matches.find(r => String(r.candidate_id) === String(assistantSelectedCandidateId));
+  if (selected) return selected;
+  assistantSelectedCandidateId = matches[0].candidate_id;
+  return matches[0];
+}
+
+function buildAssistantFitSummary(candidate) {
+  const criteria = comparisonData.criteria || [];
+  const mustHaves = criteria.filter(c => c.category === "must_have").map(c => c.text);
+  const niceToHave = criteria.filter(c => c.category === "nice_to_have").map(c => c.text);
+  const fitParts = [];
+  if (candidate.label === "Strong Hire") fitParts.push("Shows a strong fit against the intake criteria and has a positive signal score.");
+  else if (candidate.label === "Lean Hire") fitParts.push("Shows a reasonable fit but needs a recruiter decision on whether the profile exceeds the bar.");
+  else if (candidate.label === "Conflicted") fitParts.push("The panel feedback is split, so the candidate should be reviewed for decision support rather than averaged away.");
+  else fitParts.push("This candidate is a lower-confidence option and should be weighed against the current requisition bar.");
+  if (mustHaves.length) fitParts.push(`Primary alignment: ${mustHaves[0]}`);
+  if (candidate.history && candidate.history.length) fitParts.push(`Prior history exists across ${candidate.history.length} requisition${candidate.history.length > 1 ? "s" : ""}.`);
+  else fitParts.push("No prior hiring history surfaced from the current company data.");
+  return fitParts.join(" ");
+}
+
+function renderAssistantPanel() {
+  if (!comparisonData) return;
+  const panel = document.getElementById("assistant-panel");
+  if (!panel) return;
+  const listEl = document.getElementById("assistant-candidate-list");
+  const detailEl = document.getElementById("assistant-candidate-detail");
+  const messagesEl = document.getElementById("assistant-messages");
+  const filterButtons = document.querySelectorAll(".assistant-filter-btn");
+  filterButtons.forEach(btn => btn.classList.toggle("active", btn.dataset.filter === assistantFilter));
+
+  const matches = getAssistantMatches(assistantFilter);
+  const selected = getAssistantSelectedCandidate();
+  listEl.innerHTML = matches.length
+    ? matches.map(candidate => `
+        <button class="assistant-candidate-card ${String(candidate.candidate_id) === String(selected?.candidate_id) ? "active" : ""}" data-candidate-id="${candidate.candidate_id}">
+          <div class="assistant-candidate-head">
+            <div class="assistant-candidate-name">${candidate.candidate_name}</div>
+            <div class="assistant-status-pill ${candidate.label === "Strong Hire" ? "strong" : candidate.label === "Conflicted" ? "conflict" : candidate.label === "Lean Hire" || candidate.label === "Lean No Hire" ? "lean" : "optional"}">${candidate.label}</div>
+          </div>
+          <div class="assistant-candidate-meta">Signal ${candidate.signal_score} &middot; ${candidate.num_scorecards_in} scorecard(s)</div>
+          <div class="assistant-candidate-fit">${candidate.rationale}</div>
+        </button>`).join("")
+    : `<div class="empty-list">No candidates match this filter right now.</div>`;
+
+  listEl.querySelectorAll(".assistant-candidate-card").forEach(btn => {
+    btn.addEventListener("click", () => {
+      assistantSelectedCandidateId = btn.dataset.candidateId;
+      renderAssistantPanel();
+    });
+  });
+
+  if (!selected) {
+    detailEl.innerHTML = '<div class="assistant-detail-card"><div class="assistant-detail-name">No candidate available</div></div>';
+    return;
+  }
+
+  detailEl.innerHTML = `
+    <div class="assistant-detail-card">
+      <div class="assistant-detail-head">
+        <div>
+          <div class="assistant-detail-name">${selected.candidate_name}</div>
+          <div class="assistant-detail-label">${selected.label} &middot; ${selected.num_scorecards_in} scorecard(s) in</div>
+        </div>
+        <div class="assistant-status-pill ${selected.label === "Strong Hire" ? "strong" : selected.label === "Conflicted" ? "conflict" : selected.label === "Lean Hire" || selected.label === "Lean No Hire" ? "lean" : "optional"}">${selected.label}</div>
+      </div>
+      <div class="assistant-metrics">
+        <div class="assistant-metric"><div class="label">Signal</div><div class="value">${selected.signal_score}</div></div>
+        <div class="assistant-metric"><div class="label">Conflict</div><div class="value">${selected.conflict ? "Yes" : "No"}</div></div>
+        <div class="assistant-metric"><div class="label">History</div><div class="value">${selected.history?.length || 0}</div></div>
+      </div>
+      <div class="assistant-detail-label">${buildAssistantFitSummary(selected)}</div>
+      <div class="assistant-history">
+        <div class="assistant-history-title">Hiring history</div>
+        <div class="assistant-history-list">
+          ${selected.history?.length ? selected.history.map(item => `
+            <div class="assistant-history-item">
+              <div class="assistant-history-dot"></div>
+              <div class="assistant-history-item-text">${item.req_code} &middot; ${item.title} &middot; reached ${item.stage_reached} &middot; ${item.outcome.replace(/_/g, " ")}${item.date ? " &middot; " + item.date : ""}</div>
+            </div>`).join("") : '<div class="assistant-history-item"><div class="assistant-history-dot"></div><div class="assistant-history-item-text">No prior company history surfaced for this candidate.</div></div>'}
+        </div>
+      </div>
+    </div>`;
+
+  messagesEl.innerHTML = assistantMessages.map(msg => `
+    <div class="assistant-bubble ${msg.role}">${msg.content}</div>
+  `).join("");
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  const form = document.getElementById("assistant-form");
+  if (form && !form.dataset.bound) {
+    form.dataset.bound = "true";
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const input = document.getElementById("assistant-input");
+      const value = (input.value || "").trim();
+      if (!value) return;
+      assistantMessages.push({ role: "user", content: value });
+      assistantMessages.push({ role: "assistant", content: buildAssistantReply(value) });
+      input.value = "";
+      renderAssistantPanel();
+    });
+  }
+
+  filterButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      assistantFilter = btn.dataset.filter;
+      renderAssistantPanel();
+    });
+  });
+}
+
+function buildAssistantReply(prompt) {
+  const lowered = (prompt || "").toLowerCase();
+  const selected = getAssistantSelectedCandidate();
+  if (lowered.includes("strong hire") || lowered.includes("strong")) {
+    assistantFilter = "Strong Hire";
+    return "I’ve switched the lineup to Strong Hire candidates. These are the profiles with the strongest fit signal and positive evidence against the intake criteria.";
+  }
+  if (lowered.includes("lean hire") || lowered.includes("lean")) {
+    assistantFilter = "Lean Hire";
+    return "I’ve focused the view on Lean Hire candidates. These profiles are viable but need recruiter judgment on whether they clear the bar for this requisition.";
+  }
+  if (lowered.includes("conflict") || lowered.includes("conflicted")) {
+    assistantFilter = "Conflicted";
+    return "I’ve focused the view on Conflicted candidates. These are the records where the panel feedback is split and should be reviewed before advancement.";
+  }
+  if (lowered.includes("optional") || lowered.includes("backup")) {
+    assistantFilter = "Optional";
+    return "I’ve surfaced the Optional bucket, which is useful for lower-confidence or lower-signal profiles when the hiring team wants a broader list to review.";
+  }
+  if (!selected) {
+    return "There is no candidate context loaded yet. Load the comparison view and I’ll summarize fit, history, and risk for the current shortlist.";
+  }
+  if (lowered.includes("history") || lowered.includes("applied") || lowered.includes("previous")) {
+    if (selected.history?.length) {
+      return `${selected.candidate_name} has ${selected.history.length} prior hiring-history signal${selected.history.length > 1 ? "s" : ""}. The assistant sees prior requisition context that can help the recruiter judge continuity and re-application behavior.`;
+    }
+    return `${selected.candidate_name} does not currently show prior hiring-history signals in the company data. That keeps the evaluation focused on the current requisition evidence.`;
+  }
+  if (lowered.includes("fit") || lowered.includes("match") || lowered.includes("job") || lowered.includes("qualified")) {
+    return `${selected.candidate_name} is currently labeled ${selected.label}. The current evidence suggests ${buildAssistantFitSummary(selected).toLowerCase()}`;
+  }
+  return `${selected.candidate_name} is currently labeled ${selected.label} with a signal score of ${selected.signal_score}. The assistant can help you evaluate fit, conflicts, and prior hiring history for this candidate.";
 }
 
 // ---------------------------------------------------------------------

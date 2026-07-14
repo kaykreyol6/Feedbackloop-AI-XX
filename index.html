@@ -36,8 +36,11 @@
         <span>interview feedback &amp; ranking agent &middot; live database</span>
       </div>
     </div>
-    <div class="req-picker" id="req-picker">
-      <strong>Loading requisition&hellip;</strong>
+    <div class="header-actions">
+      <button id="btn-ai-assistant" class="assistant-toggle">AI HR Copilot</button>
+      <div class="req-picker" id="req-picker">
+        <strong>Loading requisition&hellip;</strong>
+      </div>
     </div>
   </header>
 
@@ -79,6 +82,39 @@
 
 <!-- Interviewer scorecard dashboard: opened via the agent's reminder link (/?interview={id}) -->
 <div id="interviewer-view" style="display:none;"></div>
+
+<!-- AI HR Copilot panel -->
+<div id="assistant-panel" class="assistant-panel" aria-hidden="true">
+  <div class="assistant-shell">
+    <div class="assistant-header">
+      <div>
+        <div class="assistant-title">AI HR Copilot</div>
+        <div class="assistant-subtitle">Context-aware evaluation workspace for hiring decisions</div>
+      </div>
+      <button id="assistant-close" class="assistant-close" aria-label="Close assistant">&times;</button>
+    </div>
+    <div class="assistant-filter-row">
+      <button class="assistant-filter-btn active" data-filter="Strong Hire">Strong Hire</button>
+      <button class="assistant-filter-btn" data-filter="Lean Hire">Lean Hire</button>
+      <button class="assistant-filter-btn" data-filter="Conflicted">Conflicted</button>
+      <button class="assistant-filter-btn" data-filter="Optional">Optional</button>
+    </div>
+    <div class="assistant-body">
+      <div class="assistant-sidebar">
+        <div class="assistant-section-title">Candidate lineup</div>
+        <div id="assistant-candidate-list" class="assistant-candidate-list"></div>
+      </div>
+      <div class="assistant-main">
+        <div id="assistant-candidate-detail" class="assistant-detail"></div>
+        <div id="assistant-messages" class="assistant-messages"></div>
+        <form id="assistant-form" class="assistant-form">
+          <input id="assistant-input" type="text" placeholder="Ask about fit, experience history, conflicts, or role match..." />
+          <button type="submit">Send</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Deep-dive modal: raw DB record inspector -->
 <div id="modal-backdrop" class="modal-backdrop" style="display:none;">
